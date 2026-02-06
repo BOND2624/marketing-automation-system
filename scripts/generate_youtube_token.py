@@ -45,8 +45,11 @@ def generate_token():
             print("\n[INFO] Using existing token.")
             return
     
-    # OAuth2 scopes for YouTube upload
-    SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
+    # OAuth2 scopes for YouTube upload and metadata reading
+    SCOPES = [
+        'https://www.googleapis.com/auth/youtube.upload',
+        'https://www.googleapis.com/auth/youtube.readonly'
+    ]
     
     print("\n[INFO] Starting OAuth2 flow...")
     print("  - A browser window will open")

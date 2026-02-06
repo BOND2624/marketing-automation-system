@@ -321,18 +321,23 @@ class YouTubeExecutionHandler(ExecutionHandler):
         super().__init__(credentials)
         if credentials and credentials.get("api_key"):
             try:
-                # Check for OAuth2 token file in project root
+                # 1. Check if OAuth2 credentials were provided directly in the dictionary
+                if credentials.get("oauth2_credentials"):
+                    self.integration = YouTubeIntegration(credentials)
+                    logger.info("YouTube integration initialized with provided OAuth2 credentials")
+                    return
+
+                # 2. Fallback: Check for OAuth2 token file in project root
                 import os
                 # Get project root: from services/execution_handlers.py -> services/ -> project root
                 project_root = os.path.dirname(os.path.dirname(__file__))
                 token_file = os.path.join(project_root, "youtube_token.json")
                 
-                # Add OAuth2 token if available
                 if os.path.exists(token_file):
                     credentials_with_oauth = credentials.copy()
                     credentials_with_oauth["oauth2_credentials"] = token_file
                     self.integration = YouTubeIntegration(credentials_with_oauth)
-                    logger.info("YouTube integration initialized with OAuth2 for uploads")
+                    logger.info("YouTube integration initialized with detected OAuth2 token file")
                 else:
                     self.integration = YouTubeIntegration(credentials)
                     logger.info("YouTube integration initialized (API key only - uploads disabled)")

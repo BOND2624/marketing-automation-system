@@ -77,24 +77,56 @@ class YouTubeIntegration(BaseIntegration):
             logger.error(f"Failed to initialize OAuth2 client: {e}")
     
     def test_connection(self) -> bool:
-        """Test YouTube API connection."""
-        if not self.youtube:
-            return False
+        """Test YouTube API connection (both Key and OAuth)."""
+        key_works = False
+        oauth_works = False
+
+        # 1. Test Public API Key (Public access)
+        if self.youtube:
+            try:
+                self._handle_rate_limit()
+                request = self.youtube.videos().list(
+                    part="id",
+                    chart="mostPopular",
+                    maxResults=1
+                )
+                request.execute()
+                key_works = True
+            except HttpError as e:
+                if e.resp.status == 403 and "quotaExceeded" in str(e):
+                    logger.warning("YouTube API Key is valid but quota exceeded.")
+                    key_works = True # Consider valid but limited
+                else:
+                    logger.error(f"YouTube Public Key test failed: {e}")
+            except Exception as e:
+                logger.error(f"YouTube Public Key test failed: {e}")
+
+        # 2. Test OAuth (Personal/Upload access)
+        if self.youtube_oauth:
+            try:
+                self._handle_rate_limit()
+                # Use channels().list(mine=True) - requires youtube.readonly or youtube scopes
+                request = self.youtube_oauth.channels().list(
+                    part="id",
+                    mine=True
+                )
+                request.execute()
+                oauth_works = True
+            except HttpError as e:
+                if e.resp.status == 403 and "insufficientPermissions" in str(e):
+                    logger.warning("YouTube OAuth token has insufficient scopes for health check (likely only 'upload').")
+                    # If it's just insufficient permissions for THIS call, the token might still be valid for uploads
+                    oauth_works = True 
+                else:
+                    logger.error(f"YouTube OAuth test failed: {e}")
+            except Exception as e:
+                logger.error(f"YouTube OAuth test failed: {e}")
         
-        try:
-            self._handle_rate_limit()
-            # Try to get channel info (requires channel ID, so we'll just test API access)
-            request = self.youtube.search().list(
-                part="snippet",
-                q="test",
-                maxResults=1,
-                type="video"
-            )
-            request.execute()
-            return True
-        except Exception as e:
-            logger.error(f"YouTube connection test failed: {e}")
-            return False
+        # If we have OAuth, it MUST work (or be valid-ish). 
+        # If we only have Key, it MUST work.
+        if self.youtube_oauth:
+            return oauth_works
+        return key_works
     
     def sync_channel_stats(self, channel_id: Optional[str] = None) -> Dict[str, Any]:
         """

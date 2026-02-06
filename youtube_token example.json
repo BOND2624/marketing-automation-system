@@ -1,0 +1,13 @@
+{
+    "token": "",
+    "refresh_token": "",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "client_id": ".com",
+    "client_secret": "",
+    "scopes": [
+        "https://www.googleapis.com/auth/youtube.upload"
+    ],
+    "universe_domain": "googleapis.com",
+    "account": "",
+    "expiry": "2026-02-04T11:39:19Z"
+}

@@ -11,6 +11,8 @@ from core.database import (
     get_db, ChannelType, ChannelCredential, CampaignStatus, Campaign,
     CampaignExecution, ExecutionStatus
 )
+import os
+# from api.routes.youtube import get_youtube_status (Removed to avoid circular import)
 from agents.data_integration import DataIntegrationAgent
 from agents.campaign_manager import CampaignManagerAgent
 from services.campaign_service import CampaignService
@@ -337,3 +339,85 @@ celery_app.conf.beat_schedule = {
     },
 }
 
+@celery_app.task(name="publish_video", bind=True)
+def publish_video(self, video_path: str, metadata: Dict[str, Any]):
+    """
+    Celery task to upload a video to YouTube using CampaignManagerAgent.
+    """
+    from core.config import get_settings
+    from core.database import SessionLocal, ChannelType
+    from agents.campaign_manager import CampaignManagerAgent
+    
+    settings = get_settings()
+    db = SessionLocal()
+    filename = os.path.basename(video_path)
+    
+    try:
+        # 1. Update status to UPLOADING (Custom status for UI)
+        self.update_state(state='UPLOADING', meta={'filename': filename})
+        
+        # 2. Check for absolute path to youtube_token.json
+        project_root = "/Users/pranavshinde/Developer/marketing-automation-system"
+        token_file = os.path.join(project_root, "youtube_token.json")
+        
+        # 3. Prepare credentials exactly as in the test script
+        credentials = {
+            ChannelType.YOUTUBE: {
+                "api_key": settings.youtube_api_key,
+                "channel_id": settings.youtube_api_key  # Fallback
+            }
+        }
+        
+        if os.path.exists(token_file):
+            credentials[ChannelType.YOUTUBE]["oauth2_credentials"] = token_file
+            logger.info(f"Injecting OAuth2 token from: {token_file}")
+        else:
+            logger.warning(f"OAuth2 token not found at {token_file} - upload will likely fail")
+
+        # 4. Initialize CampaignManagerAgent
+        agent = CampaignManagerAgent(db)
+        
+        # 5. Create a temporary campaign for this manual upload to ensure database tracking
+        campaign_config = {
+            "title": metadata.get("title", filename),
+            "description": metadata.get("description", ""),
+            "tags": metadata.get("tags", []),
+            "privacy_status": metadata.get("privacy_status", "unlisted"),
+            "video_path": video_path
+        }
+        
+        create_result = agent.create_campaign(
+            name=f"Manual Upload: {filename}",
+            channel=ChannelType.YOUTUBE,
+            config=campaign_config
+        )
+        
+        if not create_result.get("success"):
+            return {"success": False, "error": f"Failed to create tracking campaign: {create_result.get('error')}"}
+            
+        campaign_id = create_result["campaign_id"]
+        logger.info(f"Created tracking campaign {campaign_id} for {filename}")
+        
+        # 6. Execute campaign using the agent (handles status updates automatically)
+        logger.info(f"Executing campaign {campaign_id} with injection...")
+        execution_result = agent.execute_campaign(campaign_id, credentials)
+        
+        if execution_result.get("success"):
+            results = execution_result.get("results", {})
+            logger.info(f"Successfully published {filename}. Video ID: {results.get('video_id')}")
+            return {
+                "success": True,
+                "video_id": results.get("video_id"),
+                "video_url": results.get("video_url"),
+                "campaign_id": campaign_id
+            }
+        else:
+            error_msg = execution_result.get("error", "Unknown execution error")
+            logger.error(f"Execution failed for {filename}: {error_msg}")
+            return {"success": False, "error": error_msg}
+            
+    except Exception as e:
+        logger.error(f"Publish task failed for {video_path}: {e}", exc_info=True)
+        return {"success": False, "error": str(e)}
+    finally:
+        db.close()
