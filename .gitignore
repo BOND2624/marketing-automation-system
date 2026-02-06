@@ -53,3 +53,19 @@ downloads/
 *.csv
 *.xlsx
 
+youtube_token.json
+client_secrets.json
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+
+# Dependencies
+node_modules/
+
+# Secrets
+youtube_token.json
+client_secrets.json
+.env
+.env.local
