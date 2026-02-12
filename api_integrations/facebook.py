@@ -1,9 +1,10 @@
 """Facebook Graph API integration."""
 
 import logging
-import requests
-from typing import Dict, Any, Optional
 from datetime import datetime
+from typing import Any, Dict, Optional
+
+import requests
 
 from api_integrations.base import BaseIntegration
 
@@ -30,7 +31,7 @@ class FacebookIntegration(BaseIntegration):
             raise ValueError("Facebook access token is required")
     
     def _make_request(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Make a request to Facebook Graph API."""
+        """Make a GET request to Facebook Graph API."""
         if not params:
             params = {}
         params["access_token"] = self.access_token
@@ -41,9 +42,51 @@ class FacebookIntegration(BaseIntegration):
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            logger.error(f"Facebook API request failed: {e}")
+            logger.error(f"Facebook API GET request failed: {e}")
             raise
-    
+
+    def _post_request(self, endpoint: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Make a POST request to Facebook Graph API."""
+        if not data:
+            data = {}
+        data["access_token"] = self.access_token
+
+        try:
+            self._handle_rate_limit()
+            response = requests.post(f"{self.BASE_URL}/{endpoint}", data=data, timeout=30)
+            try:
+                response.raise_for_status()
+            except requests.exceptions.HTTPError as http_err:
+                # Try to log the full Graph API error payload for easier debugging
+                error_payload: Any
+                try:
+                    error_payload = response.json()
+                except ValueError:
+                    error_payload = response.text
+                logger.error(
+                    "Facebook API POST request failed: %s | endpoint=%s | payload=%s",
+                    http_err,
+                    endpoint,
+                    error_payload,
+                )
+                # Re-raise so higher-level handlers can convert to a structured error
+                raise
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Facebook API POST request failed: {e}")
+            raise
+
+    def _graph_error_message(self, response: requests.Response) -> str:
+        """Extract human-readable error message from Graph API error response."""
+        try:
+            body = response.json()
+            err = body.get("error") if isinstance(body, dict) else None
+            if isinstance(err, dict) and err.get("message"):
+                return err["message"].strip()
+        except (ValueError, AttributeError):
+            pass
+        return response.text or response.reason or "Unknown error"
+
     def test_connection(self) -> bool:
         """Test Facebook API connection."""
         try:
@@ -252,4 +295,88 @@ class FacebookIntegration(BaseIntegration):
                 result["errors"].append(f"Ad sync error: {str(e)}")
         
         return result
+
+    # ------------------------------------------------------------------
+    # Publishing helpers
+    # ------------------------------------------------------------------
+
+    def publish_feed_post(
+        self,
+        message: str,
+        link: Optional[str] = None,
+        page_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Publish a text/link post to a Facebook Page feed.
+        
+        Args:
+            message: Post message text.
+            link: Optional URL to attach.
+            page_id: Optional override for Page ID (uses self.page_id by default).
+        """
+        target_page_id = page_id or self.page_id
+        if not target_page_id:
+            return {"success": False, "error": "Facebook Page ID is required for publishing."}
+
+        if not message and not link:
+            return {"success": False, "error": "At least one of message or link is required."}
+
+        data: Dict[str, Any] = {}
+        if message:
+            data["message"] = message
+        if link:
+            data["link"] = link
+
+        try:
+            resp = self._post_request(f"{target_page_id}/feed", data=data)
+        except requests.exceptions.HTTPError as e:
+            msg = self._graph_error_message(e.response) if e.response is not None else str(e)
+            return {"success": False, "error": msg, "details": self._handle_error(e, "publish_feed_post")}
+        except Exception as e:
+            return self._handle_error(e, "publish_feed_post")
+
+        post_id = resp.get("id")
+        if not post_id:
+            return {"success": False, "error": "Failed to publish Facebook feed post.", "details": resp}
+
+        return {"success": True, "post_id": post_id}
+
+    def publish_photo(
+        self,
+        image_url: str,
+        caption: str = "",
+        page_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Publish a photo to a Facebook Page.
+        
+        Args:
+            image_url: Publicly accessible URL to the image.
+            caption: Optional caption text.
+            page_id: Optional override for Page ID.
+        """
+        target_page_id = page_id or self.page_id
+        if not target_page_id:
+            return {"success": False, "error": "Facebook Page ID is required for publishing photos."}
+
+        if not image_url:
+            return {"success": False, "error": "image_url is required for publishing a photo."}
+
+        data: Dict[str, Any] = {"url": image_url}
+        if caption:
+            data["caption"] = caption
+
+        try:
+            resp = self._post_request(f"{target_page_id}/photos", data=data)
+        except requests.exceptions.HTTPError as e:
+            msg = self._graph_error_message(e.response) if e.response is not None else str(e)
+            return {"success": False, "error": msg, "details": self._handle_error(e, "publish_photo")}
+        except Exception as e:
+            return self._handle_error(e, "publish_photo")
+
+        post_id = resp.get("post_id") or resp.get("id")
+        if not post_id:
+            return {"success": False, "error": "Failed to publish Facebook photo.", "details": resp}
+
+        return {"success": True, "post_id": post_id}
 

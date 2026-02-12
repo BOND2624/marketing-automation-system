@@ -28,7 +28,8 @@ A unified marketing automation platform powered by CrewAI, integrating YouTube, 
 
 ### Setup
 
-**📖 For detailed setup instructions, see [SETUP.md](SETUP.md)**
+**📖 For complete team setup guide, see [TEAM_SETUP_GUIDE.md](TEAM_SETUP_GUIDE.md)**  
+**📖 For detailed testing instructions, see [SETUP.md](SETUP.md)**
 
 Quick setup:
 
@@ -66,7 +67,8 @@ pip install -r requirements.txt
 
 5. Setup environment variables:
 ```bash
-cp .env.example .env  # Windows: copy .env.example .env
+# Create .env file (see TEAM_SETUP_GUIDE.md for details)
+# Copy the template from TEAM_SETUP_GUIDE.md Section 3.2
 # Edit .env with your API keys and configuration
 ```
 

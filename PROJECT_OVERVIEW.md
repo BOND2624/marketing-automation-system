@@ -30,28 +30,23 @@ Build a CrewAI-powered marketing automation system that unifies customer data, o
 | 4. Personalization Engine | AI-powered content suggestions, dynamic segmentation | ⏳ Pending |
 | 5. Full Automation & Workflows | Multi-touch journeys, triggers, full CrewAI automation | ⏳ Pending |
 
-## 5. What’s Done (Nov 2025)
+## 5. Completed Steps (Summary)
 
-- **Database/CDP**: SQLAlchemy models (`core/database.py`), CRUD helpers (`core/cdp.py`), Pydantic schemas.
-- **Agents**: `DataIntegrationAgent` (sync all channels) and `CampaignManagerAgent` (create/execute campaigns).
-- **Channel Handlers**: YouTube/Instagram/Facebook/Email/SMS integration classes with rate limiting, error handling, analytics sync.
-- **Campaign Execution**:
-  - Creates campaigns, stores configs & status.
-  - Runs channel-specific executions via Celery (sync & retry aware).
-  - Tracks executions in `campaign_executions`.
-- **YouTube Upload Flow**:
-  - OAuth2 setup scripts (`scripts/setup_youtube_oauth.py`, `scripts/generate_youtube_token.py`).
-  - Real video uploads + Shorts validation (duration ≤60s, vertical 9:16).
-  - `test_youtube_upload.py` performs full end-to-end test (campaign creation → upload → status).
-- **Docs & Troubleshooting**:
-  - `SETUP.md`, `QUICK_START.md`, `FACEBOOK_INSTAGRAM_API_SETUP.md`, `FIX_*` guides for OAuth issues, `DB_COMMANDS.md` for quick PostgreSQL inspection.
-- **Infrastructure**: Docker Compose for PostgreSQL + Redis, uv-based dependency instructions, virtualenv workflows.
+- **Module 1**: Database/CDP, API integrations (read/sync), `DataIntegrationAgent`, Celery sync tasks.
+- **Module 2**: `CampaignManagerAgent`, execution handlers, Celery campaign execution & retries.
+- **YouTube**: Full setup (OAuth credentials, token script, docs) and **real upload** (videos + Shorts validation); tested via `test_youtube_upload.py`.
+- **Instagram & Facebook – setup**: Brief setup in `TEAM_SETUP_GUIDE.md` (Section 6); detailed guide in `FACEBOOK_INSTAGRAM_API_SETUP.md`. API integrations for **read/sync** (account info, posts, insights). Execution handlers exist but **do not yet publish** (simulated post only).
+- **Instagram & Facebook – upload/publish**: **Not implemented**. Handlers return a simulated `post_id`; real Instagram Graph API (container → publish) and Facebook Graph API (page post) calls are pending.
+- **Docs**: `SETUP.md`, `QUICK_START.md`, `TEAM_SETUP_GUIDE.md`, `FACEBOOK_INSTAGRAM_API_SETUP.md`, `FIX_*` guides, `DB_COMMANDS.md`, `OLLAMA_SETUP.md`.
+- **Infrastructure**: Docker Compose (PostgreSQL + Redis), uv/venv instructions.
 
-## 6. What Happens Next
+## 6. Remaining Steps
 
-1. **Module 3** (up next): Streamlit dashboards for analytics and monitoring.
-2. Add automated tests for Instagram/Facebook/Twilio/SendGrid once credentials are ready.
-3. Later modules: personalization workflows (Ollama) and multi-step automation.
+1. **Facebook & Instagram upload/publish**: Implement real posting (Instagram: create container → publish; Facebook: page post) in `api_integrations` and `execution_handlers`; add token/credential flow if needed.
+2. **Module 3** (next): Streamlit dashboards for analytics and monitoring.
+3. Add automated tests for Instagram/Facebook/Twilio/SendGrid once credentials are ready.
+4. **Module 4**: Personalization engine (Ollama).
+5. **Module 5**: Full automation & workflows.
 
 ## 7. Demo Checklist
 

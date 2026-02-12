@@ -1,9 +1,11 @@
 """Instagram Graph API integration."""
 
 import logging
-import requests
-from typing import Dict, Any, Optional
+import time
 from datetime import datetime
+from typing import Any, Dict, Optional
+
+import requests
 
 from api_integrations.base import BaseIntegration
 
@@ -30,7 +32,7 @@ class InstagramIntegration(BaseIntegration):
             raise ValueError("Instagram access token is required")
     
     def _make_request(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Make a request to Instagram Graph API."""
+        """Make a GET request to Instagram Graph API."""
         if not params:
             params = {}
         params["access_token"] = self.access_token
@@ -41,7 +43,36 @@ class InstagramIntegration(BaseIntegration):
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            logger.error(f"Instagram API request failed: {e}")
+            logger.error(f"Instagram API GET request failed: {e}")
+            raise
+
+    def _post_request(self, endpoint: str, data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Make a POST request to Instagram Graph API."""
+        if not data:
+            data = {}
+        data["access_token"] = self.access_token
+
+        try:
+            self._handle_rate_limit()
+            response = requests.post(f"{self.BASE_URL}/{endpoint}", data=data, timeout=30)
+            try:
+                response.raise_for_status()
+            except requests.exceptions.HTTPError as http_err:
+                # Log full Graph API error payload to help debugging
+                try:
+                    error_payload: Any = response.json()
+                except ValueError:
+                    error_payload = response.text
+                logger.error(
+                    "Instagram API POST request failed: %s | endpoint=%s | payload=%s",
+                    http_err,
+                    endpoint,
+                    error_payload,
+                )
+                raise
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Instagram API POST request failed: {e}")
             raise
     
     def test_connection(self) -> bool:
@@ -236,4 +267,137 @@ class InstagramIntegration(BaseIntegration):
             result["errors"].append(str(e))
         
         return result
+
+    # ------------------------------------------------------------------
+    # Publishing (single image / video / reel)
+    # ------------------------------------------------------------------
+
+    def publish_media(
+        self,
+        caption: str,
+        media_url: str,
+        media_type: str = "IMAGE",
+        is_carousel_item: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Publish a single media item to the Instagram Business account.
+        
+        Args:
+            caption: Text caption for the post.
+            media_url: Publicly accessible URL to image or video.
+            media_type: One of 'IMAGE', 'VIDEO', 'REELS', 'STORIES'. Defaults to 'IMAGE'.
+            is_carousel_item: Whether this media is part of a carousel (not used yet).
+        
+        Returns:
+            Dict with success flag, media_id, container_id, and any error information.
+        """
+        if not self.instagram_account_id:
+            return {
+                "success": False,
+                "error": "Instagram Business Account ID is required for publishing.",
+            }
+
+        if not media_url:
+            return {
+                "success": False,
+                "error": "media_url is required for publishing to Instagram.",
+            }
+
+        # Step 1: Create media container
+        container_data: Dict[str, Any] = {
+            "caption": caption or "",
+        }
+
+        media_type_upper = (media_type or "IMAGE").upper()
+        if media_type_upper == "IMAGE":
+            container_data["image_url"] = media_url
+        else:
+            # For VIDEO / REELS / STORIES we use video_url; for large files a resumable
+            # upload is recommended, but here we rely on Meta fetching the URL directly.
+            container_data["video_url"] = media_url
+            container_data["media_type"] = media_type_upper
+
+        try:
+            container_resp = self._post_request(
+                f"{self.instagram_account_id}/media",
+                data=container_data,
+            )
+        except requests.exceptions.HTTPError as e:
+            msg = str(e)
+            if getattr(e, "response", None) is not None:
+                try:
+                    body = e.response.json()
+                    err = body.get("error")
+                    if isinstance(err, dict) and err.get("message"):
+                        msg = err["message"]
+                except Exception:
+                    pass
+            return {
+                "success": False,
+                "error": msg,
+                "details": self._handle_error(e, "publish_media_create_container"),
+            }
+        except Exception as e:
+            return self._handle_error(e, "publish_media_create_container")
+
+        container_id = container_resp.get("id")
+        if not container_id:
+            return {
+                "success": False,
+                "error": "Failed to create Instagram media container.",
+                "details": container_resp,
+            }
+
+        # Step 2: Poll container status until it's ready
+        status = "IN_PROGRESS"
+        max_attempts = 10
+        attempt = 0
+
+        while status in {"IN_PROGRESS", "PENDING"} and attempt < max_attempts:
+            attempt += 1
+            try:
+                status_resp = self._make_request(
+                    container_id,
+                    params={"fields": "status_code"},
+                )
+                status = status_resp.get("status_code", "UNKNOWN")
+            except Exception as e:
+                logger.warning(f"Failed to check Instagram container status: {e}")
+                status = "ERROR"
+                break
+
+            if status in {"IN_PROGRESS", "PENDING"}:
+                time.sleep(2)
+
+        if status != "FINISHED":
+            return {
+                "success": False,
+                "error": f"Instagram media container not ready. Status: {status}",
+                "container_id": container_id,
+            }
+
+        # Step 3: Publish the container
+        try:
+            publish_resp = self._post_request(
+                f"{self.instagram_account_id}/media_publish",
+                data={"creation_id": container_id},
+            )
+        except Exception as e:
+            return self._handle_error(e, "publish_media_publish")
+
+        media_id = publish_resp.get("id")
+        if not media_id:
+            return {
+                "success": False,
+                "error": "Failed to publish Instagram media.",
+                "container_id": container_id,
+                "details": publish_resp,
+            }
+
+        return {
+            "success": True,
+            "media_id": media_id,
+            "container_id": container_id,
+            "status": status,
+        }
 

@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     facebook_access_token: Optional[str] = None
     facebook_app_id: Optional[str] = None
     facebook_app_secret: Optional[str] = None
+    instagram_app_id: Optional[str] = None
+    instagram_app_secret: Optional[str] = None
+    facebook_page_id: Optional[str] = None
+    instagram_business_account_id: Optional[str] = None
+    
+    # Test helpers (for manual API tests)
+    instagram_test_media_url: Optional[str] = None
     
     # Email/SMS APIs
     sendgrid_api_key: Optional[str] = None

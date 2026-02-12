@@ -218,7 +218,7 @@ class InstagramExecutionHandler(ExecutionHandler):
         if "content" not in config and "media_url" not in config:
             return False, "Missing content or media_url"
         return True, None
-    
+
     def execute(
         self,
         campaign: Campaign,
@@ -230,7 +230,8 @@ class InstagramExecutionHandler(ExecutionHandler):
                 "success": False,
                 "error": "Instagram integration not initialized. Check access token."
             }
-        
+
+        config = campaign.config or {}
         results = {
             "posted": False,
             "post_id": None,
@@ -238,17 +239,49 @@ class InstagramExecutionHandler(ExecutionHandler):
         }
         
         try:
-            # In production, would use Instagram Graph API to publish
-            # For now, simulate success
-            results["posted"] = True
-            results["post_id"] = f"ig_{campaign.campaign_id}_{datetime.utcnow().timestamp()}"
-            
-            logger.info(f"Instagram campaign {campaign.campaign_id} executed")
-            
-            return {
-                "success": True,
-                **results
-            }
+            # Validate config
+            is_valid, error = self.validate_campaign_config(config)
+            if not is_valid:
+                return {"success": False, "error": error, **results}
+
+            caption = config.get("content") or config.get("caption") or ""
+            media_url = config.get("media_url")
+            media_type = (config.get("media_type") or "IMAGE").upper()
+
+            if not media_url:
+                return {
+                    "success": False,
+                    "error": "media_url is required to publish to Instagram.",
+                    **results,
+                }
+
+            publish_result = self.integration.publish_media(
+                caption=caption,
+                media_url=media_url,
+                media_type=media_type,
+            )
+
+            if publish_result.get("success"):
+                results["posted"] = True
+                results["post_id"] = publish_result.get("media_id")
+                logger.info(
+                    f"Instagram campaign {campaign.campaign_id} executed, media_id={results['post_id']}"
+                )
+                return {
+                    "success": True,
+                    **results,
+                    "details": publish_result,
+                }
+            else:
+                error_msg = publish_result.get("error", "Instagram publish failed")
+                results["errors"].append(error_msg)
+                logger.warning(f"Instagram publish failed for campaign {campaign.campaign_id}: {error_msg}")
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    **results,
+                    "details": publish_result,
+                }
             
         except Exception as e:
             logger.error(f"Instagram execution failed: {e}", exc_info=True)
@@ -288,22 +321,55 @@ class FacebookExecutionHandler(ExecutionHandler):
                 "error": "Facebook integration not initialized. Check access token."
             }
         
+        config = campaign.config or {}
         results = {
             "posted": False,
             "post_id": None
         }
         
         try:
-            # Simulate posting
-            results["posted"] = True
-            results["post_id"] = f"fb_{campaign.campaign_id}_{datetime.utcnow().timestamp()}"
-            
-            logger.info(f"Facebook campaign {campaign.campaign_id} executed")
-            
-            return {
-                "success": True,
-                **results
-            }
+            # Validate config
+            is_valid, error = self.validate_campaign_config(config)
+            if not is_valid:
+                return {"success": False, "error": error, **results}
+
+            message = config.get("message") or config.get("content") or ""
+            media_url = config.get("media_url")
+            link = config.get("link")
+
+            if media_url:
+                # Publish a photo post
+                publish_result = self.integration.publish_photo(
+                    image_url=media_url,
+                    caption=message,
+                )
+            else:
+                # Text/link feed post
+                publish_result = self.integration.publish_feed_post(
+                    message=message,
+                    link=link,
+                )
+
+            if publish_result.get("success"):
+                results["posted"] = True
+                results["post_id"] = publish_result.get("post_id")
+                logger.info(
+                    f"Facebook campaign {campaign.campaign_id} executed, post_id={results['post_id']}"
+                )
+                return {
+                    "success": True,
+                    **results,
+                    "details": publish_result,
+                }
+            else:
+                error_msg = publish_result.get("error", "Facebook publish failed")
+                logger.warning(f"Facebook publish failed for campaign {campaign.campaign_id}: {error_msg}")
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    **results,
+                    "details": publish_result,
+                }
             
         except Exception as e:
             logger.error(f"Facebook execution failed: {e}", exc_info=True)
