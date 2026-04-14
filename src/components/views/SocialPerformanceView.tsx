@@ -34,6 +34,8 @@ interface ChannelBlock {
   videos_error?: string;
   posts_error?: string;
   insights_error?: string;
+  /** Facebook: posts loaded with minimal fields; engagement may be 0 */
+  posts_metrics_note?: string;
 }
 
 interface Overview {
@@ -186,6 +188,13 @@ export default function SocialPerformanceView() {
           const b = overview[t.key];
           const active = platform === t.key;
           const ok = b.connected && !b.error;
+          const fbWarn = t.key === 'facebook' && (b.posts_error || b.insights_error);
+          const subtext =
+            b.error ||
+            (t.key === 'youtube' && b.videos_error) ||
+            fbWarn ||
+            (ok ? 'Data loaded from API' : 'Connect in Integration / Settings');
+          const subLong = !!(b.error || (t.key === 'youtube' && b.videos_error) || fbWarn);
           return (
             <button
               key={t.key}
@@ -209,11 +218,11 @@ export default function SocialPerformanceView() {
                   title={ok ? 'Connected' : 'Not connected or error'}
                 />
               </div>
-              <p className="text-xs text-gray-500 line-clamp-2">
-                {b.error ||
-                  (t.key === 'youtube' && b.videos_error) ||
-                  (t.key === 'facebook' && (b.posts_error || b.insights_error)) ||
-                  (ok ? 'Data loaded from API' : 'Connect in Integration / Settings')}
+              <p
+                className={`text-xs text-gray-500 text-left ${subLong ? 'max-h-28 overflow-y-auto leading-snug' : 'line-clamp-2'}`}
+                title={typeof subtext === 'string' ? subtext : undefined}
+              >
+                {subtext}
               </p>
             </button>
           );
@@ -230,10 +239,12 @@ export default function SocialPerformanceView() {
           </span>
         </div>
 
-        {block.error && (
+        {(block.error || (platform === 'facebook' && (block.posts_error || block.insights_error))) && (
           <div className="flex items-start gap-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
             <AlertCircle className="w-5 h-5 shrink-0" />
-            <span>{block.error}</span>
+            <span className="whitespace-pre-wrap break-words">
+              {block.error || block.posts_error || block.insights_error}
+            </span>
           </div>
         )}
 
@@ -267,12 +278,19 @@ export default function SocialPerformanceView() {
         )}
 
         {platform === 'facebook' && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <Metric label="Page" value={(block.channel?.name as string) || '—'} accent />
-            <Metric label="Page likes" value={formatNum(block.channel?.fan_count)} icon={<Heart className="w-4 h-4" />} />
-            <Metric label="Impressions (30d)" value={formatNum(block.channel?.impressions_30d)} icon={<Eye className="w-4 h-4" />} />
-            <Metric label="Engaged users (30d)" value={formatNum(block.channel?.engaged_users_30d)} />
-          </div>
+          <>
+            {block.posts_metrics_note && (
+              <div className="mb-4 text-sm text-blue-900 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+                {block.posts_metrics_note}
+              </div>
+            )}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <Metric label="Page" value={(block.channel?.name as string) || '—'} accent />
+              <Metric label="Page likes" value={formatNum(block.channel?.fan_count)} icon={<Heart className="w-4 h-4" />} />
+              <Metric label="Impressions (30d)" value={formatNum(block.channel?.impressions_30d)} icon={<Eye className="w-4 h-4" />} />
+              <Metric label="Engaged users (30d)" value={formatNum(block.channel?.engaged_users_30d)} />
+            </div>
+          </>
         )}
       </div>
 

@@ -211,13 +211,16 @@ def build_social_overview() -> Dict[str, Any]:
                 out["facebook"]["insights_error"] = insights.get("error")
             raw_posts = fb.sync_page_posts(limit=25)
             if "error" not in raw_posts:
+                if raw_posts.get("metrics_note"):
+                    out["facebook"]["posts_metrics_note"] = raw_posts["metrics_note"]
                 for p in raw_posts.get("posts", []):
-                    msg = p.get("message") or ""
+                    msg = (p.get("message") or "").strip()
                     out["facebook"]["posts"].append(
                         {
                             "id": p.get("post_id"),
                             "title": msg[:120] or "Post",
                             "subtitle": p.get("created_time", ""),
+                            "permalink": p.get("permalink_url"),
                             "metrics": {
                                 "likes": p.get("likes", 0),
                                 "comments": p.get("comments", 0),
